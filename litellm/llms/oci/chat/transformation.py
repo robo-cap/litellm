@@ -4,21 +4,39 @@ Translation from OpenAI's `/chat/completions` endpoint to IBM WatsonX's `/text/c
 Docs: https://cloud.ibm.com/apidocs/watsonx-ai#text-chat
 """
 
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, AsyncIterator, Iterator, Union
+import httpx
 
+from litellm import token_counter
 from litellm.secret_managers.main import get_secret_str
+from litellm.llms.base_llm.base_model_iterator import FakeStreamResponseIterator
 
 from ....utils import _remove_additional_properties, _remove_strict_from_schema
 from litellm.llms.base_llm.chat.transformation import BaseConfig
 from ..common_utils import OCIBaseLLM
 from litellm.types.llms.openai import AllMessageValues
 
+from litellm.types.utils import (
+    ChatCompletionToolCallChunk,
+    ChatCompletionUsageBlock,
+    Choices,
+    GenericStreamingChunk,
+    Message,
+    ModelResponse,
+    Usage,
+)
 
-class OCIChatConfig(BaseConfig, OCIBaseLLM):
+from ..common_utils import OCIGenAIError
+
+class OCIChatConfig(OCIBaseLLM, BaseConfig):
     def __init__(self, **kwargs):
         BaseConfig.__init__(self, **kwargs)
         OCIBaseLLM.__init__(self, **kwargs)
 
+    @classmethod
+    def get_config(cls):
+        return super().get_config()
+    
     def get_supported_openai_params(self, model: str) -> List:
         return [
             "temperature",  # equivalent to temperature
@@ -88,6 +106,37 @@ class OCIChatConfig(BaseConfig, OCIBaseLLM):
         url = self._get_base_url(inference_mode="chat")
         return url
 
+    def _completions_to_model(self, compartment_id: str | None, model: str, prompt: list, optional_params: dict) -> dict:
+        params = {}
+        if frequency_penalty := optional_params.get("frequency_penalty"):
+            params["frequencyPenalty"] = frequency_penalty
+        if max_tokens := optional_params.get("max_tokens"):
+            params["maxTokens"] = max_tokens
+        if presence_penalty := optional_params.get("presence_penalty"):
+            params["presencePenalty"] = presence_penalty    
+        if temperature := optional_params.get("temperature"):
+            params["temperature"] = temperature
+        if top_k := optional_params.get("top_k"):
+            params["topK"] = top_k
+        if top_p := optional_params.get("top_p"):
+            params["topP"] = top_p
+        if stream := optional_params.get("stream", False):
+            params["isStream"] = stream
+        chat_request = {
+            "apiFormat": "GENERIC",
+            "messages": prompt,
+        }
+        
+        chat_request.update(params)
+        return {
+            "compartmentId": compartment_id,
+            "servingMode": {
+                "modelId": model,
+                "servingType": "ON_DEMAND"
+            },
+            "chatRequest": chat_request
+        }
+
 
     def transform_request(
         self,
@@ -97,7 +146,6 @@ class OCIChatConfig(BaseConfig, OCIBaseLLM):
         litellm_params: dict,
         headers: dict
     ) -> dict:
-        print(messages)
         transformed_messages = []
         for message in messages:
             transformed_messages.append(
@@ -111,23 +159,18 @@ class OCIChatConfig(BaseConfig, OCIBaseLLM):
                     ]
                 }
             )
-        ## Load Config
+        compartment_id = optional_params.get("compartment_id")
         config = self.get_config()
-    
-        # if not self.compartment_id:
-        #     raise OCIError(
-        #         message="Compartment ID is required",
-        #         status_code=422,
-        # )
         
         for k, v in config.items():
             if k not in optional_params:
                 optional_params[k] = v
         
         data = self._completions_to_model(
-            compartment_id=self.compartment_id, model=model, prompt=transformed_messages, 
+            compartment_id=compartment_id, model=model, prompt=transformed_messages, 
             optional_params=optional_params
         )
+        print(data)
         return data
     
     def transform_response(
@@ -135,7 +178,7 @@ class OCIChatConfig(BaseConfig, OCIBaseLLM):
         model: str,
         raw_response: httpx.Response,
         model_response: ModelResponse,
-        logging_obj: LoggingClass,
+        logging_obj,
         request_data: dict,
         messages: List[AllMessageValues],
         optional_params: dict,
@@ -154,12 +197,12 @@ class OCIChatConfig(BaseConfig, OCIBaseLLM):
         try:
             completion_response = raw_response.json()
         except httpx.HTTPStatusError as e:
-            raise OCIError(
+            raise OCIGenai(
                 message=str(e),
                 status_code=raw_response.status_code,
             )
         except Exception as e:
-            raise OCIError(
+            raise OCIGenAIError(
                 message=str(e),
                 status_code=422,
             )
@@ -180,7 +223,7 @@ class OCIChatConfig(BaseConfig, OCIBaseLLM):
             model_response.choices = choices_list  # type: ignore
 
         except Exception as e:
-            raise OCIError(
+            raise OCIGenAIError(
                 message=str(e),
                 status_code=422,
             )

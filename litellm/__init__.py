@@ -56,6 +56,7 @@ from litellm.constants import (
     bedrock_embedding_models,
     known_tokenizer_config,
     BEDROCK_INVOKE_PROVIDERS_LITERAL,
+    oci_models
 )
 from litellm.types.guardrails import GuardrailItem
 from litellm.proxy._types import (
@@ -951,6 +952,8 @@ from .llms.openai.chat.o_series_transformation import (
 )
 
 from .llms.snowflake.chat.transformation import SnowflakeConfig
+
+from .llms.oci.chat.transformation import OCIChatConfig
 
 openaiOSeriesConfig = OpenAIOSeriesConfig()
 from .llms.openai.chat.gpt_transformation import (

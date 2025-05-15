@@ -114,14 +114,13 @@ def _get_oci_params(
 
 # Mixin class for shared OCI GenAI functionality
 class OCIBaseLLM:
-    def __init__(self, **kwargs: Dict) -> None:
+    def __init__(self) -> None:
         self.body_signer = None
-        self.oci_params = _get_oci_params(kwargs["optional_params"])
-        self.region_name = self.oci_params["region_name"]
-        self.custom_endpoint = self.oci_params["custom_endpoint"]
-        self._get_body_signer(self.oci_params)
+        # self.oci_params = _get_oci_params(kwargs.get("optional_params", {}))
+        self.region_name = None
+        # self._get_body_signer(self.oci_params)
 
-    def _get_body_signer(
+    def _initialize_body_signer(
         self, oci_params: OCIGenAIParams,
     ) -> None:
         try:
@@ -157,9 +156,6 @@ class OCIBaseLLM:
             )
         
     def _get_base_url(self, inference_mode: str) -> str:
-    
-        if self.custom_endpoint:
-            return self.custom_endpoint
         
         url = None
         if inference_mode.lower() == "chat":
@@ -196,14 +192,6 @@ class OCIBaseLLM:
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
     ) -> Dict:
-        
-        # Injecting missing headers
-        exiting_headers = (header.lower() for header in headers)
-        if "content-type" not in exiting_headers:
-            headers["Content-Type"] = "application/json"
-        if "date" not in exiting_headers:
-            headers["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
-
         return headers
     
     def sign_request(
@@ -216,16 +204,22 @@ class OCIBaseLLM:
         stream: Optional[bool] = None,
         fake_stream: Optional[bool] = None,
     ) -> dict:
-        if self.body_signer is None:
+        try:
+            if self.body_signer is None:
+                oci_params = _get_oci_params(optional_params)
+                self._initialize_body_signer(oci_params)
+        except Exception as e:       
             raise OCIGenAIError(
                 status_code=401,
-                message="Error: Body signer not set. Could not sign request.",
+                message=f"Error: Body signer not set. Could not sign request {e}.",
             )
         # Injecting missing headers
-        exiting_headers = (header.lower() for header in headers)
-        if "host" not in exiting_headers:
-            headers["Host"] = urlparse(api_base).netloc
-        if "x-content-sha256" not in exiting_headers:
+        
+        new_headers = { k.lower(): v for k, v in headers.items() }
+        new_headers.setdefault("content-type", "application/json")
+        new_headers.setdefault("date", datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"))
+        new_headers.setdefault("host", urlparse(api_base).netloc)
+        if "x-content-sha256" not in new_headers:
             try:
                 body = json.dumps(request_data, allow_nan=False)
             except ValueError as e:
@@ -234,22 +228,25 @@ class OCIBaseLLM:
                     message=f"Error: Could not serialize request data. Message: {e}",
                 )
             encoded_body = body.encode("utf-8")
-            
-            if "content-length" not in exiting_headers:
-                headers["Content-Length"] = str(len(encoded_body))
-            
+
+            new_headers.setdefault("content-length", str(len(encoded_body)))
             
             m = hashlib.sha256()
             m.update(encoded_body)
             base64digest = base64.b64encode(m.digest())
             base64string = base64digest.decode("utf-8")
-            headers["x-content-sha256"] = base64string
+            new_headers["x-content-sha256"] = base64string
+        
+        if self.body_signer is None:
+            raise OCIGenAIError(
+                status_code=401,
+                message="Error: Body signer is not initialized. Ensure that `_initialize_body_signer` is called before signing requests.",
+            )
         
         signed_headers = self.body_signer.sign(
-            headers=headers,
-            host=urlparse(api_base).netloc,
+            headers=new_headers,
             method="POST",
             path=urlparse(api_base).path,
         )
-        headers.update(signed_headers)
-        return headers
+        new_headers.update(signed_headers)
+        return new_headers

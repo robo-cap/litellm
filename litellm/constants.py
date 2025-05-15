@@ -350,6 +350,10 @@ bedrock_embedding_models: List = [
     "cohere.embed-multilingual-v3",
 ]
 
+oci_models: List = [
+    "oci/meta.llama-3.1-70b-instruct",
+]
+
 known_tokenizer_config = {
     "mistralai/Mistral-7B-Instruct-v0.1": {
         "tokenizer": {

@@ -26,9 +26,7 @@ from litellm.types.llms.openai import (
 from litellm.types.utils import GenericStreamingChunk
 from litellm.utils import CustomStreamWrapper, ModelResponse, ProviderConfigManager
 
-from ..oci_base import OCIBase
-from ..common_utils import OCIGenAIError
-from .transformation import OCIAuth
+from ..common_utils import OCIBaseLLM, OCIGenAIError
 
 
 async def make_call(
@@ -95,7 +93,7 @@ def make_sync_call(
         client = litellm.module_level_client 
     try:
         response = client.post(
-            api_base, headers=headers, data=data, stream=True, timeout=timeout
+            api_base, headers=headers, json=data, stream=True, timeout=timeout
         )
     except httpx.HTTPStatusError as e:
         error_headers = getattr(e, "headers", None)
@@ -136,7 +134,7 @@ def make_sync_call(
     return completion_stream, response.headers
 
 
-class OciChatCompletion(OCIBase):
+class OciChatCompletion(OCIBaseLLM):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -230,7 +228,7 @@ class OciChatCompletion(OCIBase):
                 error_headers = getattr(error_response, "headers", None)
             if error_response and hasattr(error_response, "text"):
                 error_text = getattr(error_response, "text", error_text)
-            raise OCIError(
+            raise OCIGenAIError(
                 message=error_text,
                 status_code=status_code,
                 headers=error_headers,
@@ -257,7 +255,6 @@ class OciChatCompletion(OCIBase):
         api_base: str,
         custom_llm_provider: str,
         custom_prompt_dict: dict,
-        compartment_id: str,
         model_response: ModelResponse,
         print_verbose: Callable,
         encoding,
@@ -274,15 +271,13 @@ class OciChatCompletion(OCIBase):
 
         optional_params = copy.deepcopy(optional_params)
         stream = optional_params.get("stream", None)
-        json_mode: bool = optional_params.pop("json_mode", False)
-        
-        # _is_function_call = False
+
         messages = copy.deepcopy(messages)
         config = ProviderConfigManager.get_provider_chat_config(
             model=model,
             provider=LlmProviders(custom_llm_provider),
         )
-        
+
         data = config.transform_request(
             model=model,
             messages=messages,
@@ -290,24 +285,33 @@ class OciChatCompletion(OCIBase):
             litellm_params=litellm_params,
             headers=headers
         )
-        print(data)
         
         
         ## COMPLETION CALL
         if (
             stream is True
         ):  # if function call - fake the streaming (need complete blocks for output parsing in openai format)
+            
+            client = client or litellm.module_level_client 
+
+            headers = self.sign_request(
+                headers=headers,
+                optional_params=optional_params,
+                request_data=data,
+                api_base=api_base,
+                model=model,
+                stream=stream,
+            )
+            
             completion_stream, headers = make_sync_call(
                 client=client,
                 api_base=api_base,
                 headers=headers,  # type: ignore
-                json_data=data,
+                data=data,
                 model=model,
                 messages=messages,
                 logging_obj=logging_obj,
                 timeout=timeout,
-                json_mode=json_mode,
-                auth=self.httpx_auth
             )
             return CustomStreamWrapper(
                 completion_stream=completion_stream,
@@ -318,11 +322,18 @@ class OciChatCompletion(OCIBase):
 
         else:
                 
-            client = client or _get_httpx_client(
-                params={"auth": self.httpx_auth}
+            client = client or litellm.module_level_client 
+            
+            headers = self.sign_request(
+                headers=headers,
+                optional_params=optional_params,
+                request_data=data,
+                api_base=api_base,
+                model=model,
+                stream=stream,
             )
+
             try:
-                
                 response = client.post(
                     api_base,
                     headers=headers,
@@ -584,7 +595,7 @@ class ModelResponseIterator:
             text: The text to use in the content
             tool_use: The ChatCompletionToolCallChunk to use in the chunk response
         """
-        if self.json_mode is True and tool_use is not None:
+        if tool_use is not None:
             message = OciChatConfig._convert_tool_response_to_message(
                 tool_calls=[tool_use]
             )
