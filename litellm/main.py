@@ -137,6 +137,7 @@ from .llms.deprecated_providers import aleph_alpha, palm
 from .llms.groq.chat.handler import GroqChatCompletion
 from .llms.huggingface.chat.handler import Huggingface
 from .llms.nlp_cloud.chat.handler import completion as nlp_cloud_chat_completion
+from .llms.oci.chat.handler import OciChatCompletion
 from .llms.ollama.completion import handler as ollama
 from .llms.oobabooga.chat import oobabooga
 from .llms.openai.completion.handler import OpenAITextCompletion
@@ -238,6 +239,7 @@ databricks_embedding = DatabricksEmbeddingHandler()
 base_llm_http_handler = BaseLLMHTTPHandler()
 base_llm_aiohttp_handler = BaseLLMAIOHTTPHandler()
 sagemaker_chat_completion = SagemakerChatHandler()
+oci_chat_completion = OciChatCompletion()
 ####### COMPLETION ENDPOINTS ################
 
 
@@ -3030,6 +3032,30 @@ def completion(  # type: ignore # noqa: PLR0915
                     additional_args={"headers": headers},
                 )
                 raise e
+        elif custom_llm_provider == "oci":
+            custom_prompt_dict = custom_prompt_dict or litellm.custom_prompt_dict
+            # call /messages
+            # default route for all oci models
+
+            response = oci_chat_completion.completion(
+                model=model,
+                messages=messages,
+                api_base=api_base,
+                acompletion=acompletion,
+                custom_prompt_dict=litellm.custom_prompt_dict,
+                model_response=model_response,
+                print_verbose=print_verbose,
+                optional_params=optional_params,
+                litellm_params=litellm_params,
+                logger_fn=logger_fn,
+                encoding=encoding,  # for calculating input/output tokens
+                api_key=api_key,
+                logging_obj=logging,
+                headers=headers,
+                timeout=timeout,
+                client=client,
+                custom_llm_provider=custom_llm_provider,
+            )
 
         elif custom_llm_provider == "custom":
             url = litellm.api_base or api_base or ""

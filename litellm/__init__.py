@@ -188,7 +188,7 @@ nlp_cloud_key: Optional[str] = None
 snowflake_key: Optional[str] = None
 common_cloud_provider_auth_params: dict = {
     "params": ["project", "region_name", "token"],
-    "providers": ["vertex_ai", "bedrock", "watsonx", "azure", "vertex_ai_beta"],
+    "providers": ["vertex_ai", "bedrock", "watsonx", "azure", "vertex_ai_beta", "oci"],
 }
 use_client: bool = False
 ssl_verify: Union[str, bool] = True
@@ -421,6 +421,7 @@ galadriel_models: List = []
 sambanova_models: List = []
 assemblyai_models: List = []
 snowflake_models: List = []
+oci_models: List = []
 
 
 def is_bedrock_pricing_only_model(key: str) -> bool:
@@ -576,7 +577,8 @@ def add_known_models():
             jina_ai_models.append(key)
         elif value.get("litellm_provider") == "snowflake":
             snowflake_models.append(key)
-
+        elif value.get("litellm_provider") == "oci":
+            oci_models.append(key)
 
 add_known_models()
 # known openai compatible endpoints - we'll eventually move this list to the model_prices_and_context_window.json dictionary
@@ -651,6 +653,7 @@ model_list = (
     + assemblyai_models
     + jina_ai_models
     + snowflake_models
+    + oci_models
 )
 
 model_list_set = set(model_list)
@@ -707,6 +710,7 @@ models_by_provider: dict = {
     "assemblyai": assemblyai_models,
     "jina_ai": jina_ai_models,
     "snowflake": snowflake_models,
+    "oci": oci_models,
 }
 
 # mapping for those models which have larger equivalents

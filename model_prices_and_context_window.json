@@ -10588,5 +10588,26 @@
         "max_output_tokens": 8192,
         "litellm_provider": "snowflake",
         "mode": "chat"
+    },
+    "oci/meta.llama-3.3-70b-instruct": {
+        "max_tokens": 128000,
+        "max_input_tokens": 128000,
+        "max_output_tokens": 4000,
+        "litellm_provider": "oci",
+        "mode": "chat"
+    },
+    "oci/meta.llama-3.1-405b-instruct": {
+        "max_tokens": 128000,
+        "max_input_tokens": 128000,
+        "max_output_tokens": 4000,
+        "litellm_provider": "oci",
+        "mode": "chat"
+    },
+    "meta.llama-3.1-70b-instruct": {
+        "max_tokens": 128000,
+        "max_input_tokens": 128000,
+        "max_output_tokens": 4000,
+        "litellm_provider": "oci",
+        "mode": "chat"
     }
 }
